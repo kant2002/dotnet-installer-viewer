@@ -1,0 +1,20 @@
+<html>
+<head>
+<title>Dotnet Installer Viewer</title>
+<script type="module">
+import { Octokit } from "https://cdn.skypack.dev/@octokit/rest";
+octokit.rest.repos
+  .listForOrg({
+    org: "dotnet",
+    type: "public",
+  })
+  .then(({ data }) => {
+    // handle data
+    console.log(data);
+  });
+
+</script>
+</head>
+<body>
+</body>
+</html>
