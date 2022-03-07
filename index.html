@@ -3,15 +3,75 @@
 <title>Dotnet Installer Viewer</title>
 <script type="module">
 import { Octokit } from "https://cdn.skypack.dev/@octokit/rest";
-octokit.rest.repos
-  .listForOrg({
-    org: "dotnet",
-    type: "public",
-  })
-  .then(({ data }) => {
-    // handle data
-    console.log(data);
+const octokit = new Octokit({});
+
+async function getVersionDetailsXml(octokit, owner, repo, commitSha) {
+  const commitData = await octokit.request('GET /repos/{owner}/{repo}/git/commits/{commit_sha}', {
+    owner,
+    repo,
+    commit_sha: commitSha
   });
+  //console.log(commitData.data);
+  const installerRootTreeSha = commitData.data.tree.sha;
+  const installerRootTree = await octokit.request('GET /repos/{owner}/{repo}/git/trees/{tree_sha}', {
+    owner,
+    repo,
+    tree_sha: installerRootTreeSha
+  });
+  const installerEngNode = installerRootTree.data.tree.filter(_ => _.path == 'eng')[0];
+  //console.log(installerEngNode.sha);
+  const installerEngTree = await octokit.request('GET /repos/{owner}/{repo}/git/trees/{tree_sha}', {
+    owner,
+    repo,
+    tree_sha: installerEngNode.sha
+  });
+  const installerVersionDetailsNode = installerEngTree.data.tree.filter(_ => _.path == 'Version.Details.xml')[0];
+  //console.log(installerVersionDetailsNode);
+  const versionXml = await octokit.request('GET /repos/{owner}/{repo}/git/blobs/{file_sha}', {
+    owner,
+    repo,
+    file_sha: installerVersionDetailsNode.sha
+  });
+  return atob(versionXml.data.content);
+}
+
+function findDependency(xmlDocument, dependencyName) {
+  const windowsDesktopNode = xmlDocument.querySelector(`Dependency[Name="${dependencyName}"]`);
+  const dependencyUrl = windowsDesktopNode.querySelector("Uri").textContent;
+  const parts = dependencyUrl.replace('https://github.com/', '').split('/');
+  const dependency = {
+    name: dependencyName,
+    version: windowsDesktopNode.getAttribute('Version'),
+    sha: windowsDesktopNode.querySelector("Sha").textContent,
+    owner: parts[0],
+    repo: parts[1],
+  };
+  return dependency;
+}
+
+const owner = 'dotnet';
+const repo = 'installer';
+const commitSha = '5fe093bc3560116ac23636f2e6c303332f183cb9';
+console.log("Retreving Version.xml from dotnet/installer repo");
+const versionXml = await getVersionDetailsXml(octokit, owner, repo, commitSha);
+//console.log(versionXml);
+
+const parser = new DOMParser();
+const xml_doc = parser.parseFromString(versionXml, "application/xml");
+
+const windowsDesktopDependency = findDependency(xml_doc, "Microsoft.WindowsDesktop.App.Ref");
+console.log(windowsDesktopDependency);
+const runtimeDependency = findDependency(xml_doc, "Microsoft.NETCore.App.Ref");
+console.log(runtimeDependency);
+
+const desktopVersionXml = await getVersionDetailsXml(octokit, windowsDesktopDependency.owner, windowsDesktopDependency.repo, windowsDesktopDependency.sha);
+//console.log(desktopVersionXml);
+const desktopXmlDoc = parser.parseFromString(desktopVersionXml, "application/xml");
+
+const winformsDependency = findDependency(desktopXmlDoc, "Microsoft.Private.Winforms");
+console.log(winformsDependency);
+const wpfDependency = findDependency(desktopXmlDoc, "Microsoft.NET.Sdk.WindowsDesktop");
+console.log(wpfDependency);
 
 </script>
 </head>
