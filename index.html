@@ -33,18 +33,27 @@ async function getVersionDetailsXml(octokit, owner, repo, commitSha) {
   return atob(versionXml.data.content);
 }
 
-function findDependency(xmlDocument, dependencyName) {
-  const windowsDesktopNode = xmlDocument.querySelector(`Dependency[Name="${dependencyName}"]`);
-  const dependencyUrl = windowsDesktopNode.querySelector("Uri").textContent;
+function extractDependencies(xmlDocument) {
+  const nodes = xmlDocument.querySelectorAll(`Dependency`);
+  return Array.from(nodes).map(convertFromNode);
+}
+
+function convertFromNode(node) {
+  const dependencyUrl = node.querySelector("Uri").textContent;
   const parts = dependencyUrl.replace('https://github.com/', '').split('/');
   const dependency = {
-    name: dependencyName,
-    version: windowsDesktopNode.getAttribute('Version'),
-    sha: windowsDesktopNode.querySelector("Sha").textContent,
+    name: node.getAttribute('Name'),
+    version: node.getAttribute('Version'),
+    sha: node.querySelector("Sha").textContent,
     owner: parts[0],
     repo: parts[1],
   };
-  return dependency;
+  return new DependencyInfo(dependency);
+}
+
+function findDependency(dependencies, dependencyName) {
+  const filteredDependencies = dependencies.filter(_ => _.name === dependencyName);
+  return filteredDependencies.length > 0 ? filteredDependencies[0] : null;
 }
 
 const octokit = new Octokit({});
@@ -77,19 +86,37 @@ class Model
 
     const parser = new DOMParser();
     const xml_doc = parser.parseFromString(versionXml, "application/xml");
+    const installerDependencies = extractDependencies(xml_doc);
 
-    const windowsDesktopDependency = findDependency(xml_doc, "Microsoft.WindowsDesktop.App.Ref");
-    this.dependencies.push(new DependencyInfo(windowsDesktopDependency));
-    const runtimeDependency = findDependency(xml_doc, "Microsoft.NETCore.App.Ref");
-    this.dependencies.push(new DependencyInfo(runtimeDependency));
+    const windowsDesktopDependency = findDependency(installerDependencies, "Microsoft.WindowsDesktop.App.Ref");
+    this.dependencies.push(windowsDesktopDependency);
+    const runtimeDependency = findDependency(installerDependencies, "Microsoft.NETCore.App.Ref");
+    this.dependencies.push(runtimeDependency);
+    const aspnetcodeDependency = findDependency(installerDependencies, "Microsoft.AspNetCore.App.Ref");
+    this.dependencies.push(aspnetcodeDependency);
+    const netstandardDependency = findDependency(installerDependencies, "NETStandard.Library.Ref");
+    this.dependencies.push(netstandardDependency);
+    const sdkDependency = findDependency(installerDependencies, "Microsoft.NET.Sdk");
+    this.dependencies.push(sdkDependency);
+    const fsharpDependency = findDependency(installerDependencies, "Microsoft.FSharp.Compiler");
+    this.dependencies.push(fsharpDependency);
+    const vstestDependency = findDependency(installerDependencies, "Microsoft.NET.Test.Sdk");
+    this.dependencies.push(vstestDependency);
+    const linkerDependency = findDependency(installerDependencies, "Microsoft.NET.ILLink.Tasks");
+    this.dependencies.push(linkerDependency);
+    const roslynDependency = findDependency(installerDependencies, "Microsoft.Net.Compilers.Toolset");
+    this.dependencies.push(roslynDependency);
+    const msbuildDependency = findDependency(installerDependencies, "Microsoft.Build");
+    this.dependencies.push(msbuildDependency);
 
     const desktopVersionXml = await getVersionDetailsXml(octokit, windowsDesktopDependency.owner, windowsDesktopDependency.repo, windowsDesktopDependency.sha);
     const desktopXmlDoc = parser.parseFromString(desktopVersionXml, "application/xml");
 
-    const winformsDependency = findDependency(desktopXmlDoc, "Microsoft.Private.Winforms");
-    this.dependencies.push(new DependencyInfo(winformsDependency));
-    const wpfDependency = findDependency(desktopXmlDoc, "Microsoft.NET.Sdk.WindowsDesktop");
-    this.dependencies.push(new DependencyInfo(wpfDependency));
+    const desktopDependencies = extractDependencies(desktopXmlDoc);
+    const winformsDependency = findDependency(desktopDependencies, "Microsoft.Private.Winforms");
+    this.dependencies.push(winformsDependency);
+    const wpfDependency = findDependency(desktopDependencies, "Microsoft.NET.Sdk.WindowsDesktop");
+    this.dependencies.push(wpfDependency);
   }
 }
 
